@@ -1,0 +1,35 @@
+version: '3.9'
+
+services:
+  redis:
+    container_name: redis
+    image: redis:alpine3.17
+    restart: unless-stopped
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis:/data
+
+  redis-commander:
+    container_name: redis_commander
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8082:8081"
+    depends_on:
+      - redis
+
+  redisinsight:
+    image: redislabs/redisinsight:latest
+    ports:
+      - '8001:8001'
+    depends_on:
+      - redis
+    volumes:
+      - ./data/redisinsight:/db 
+volumes:
+  redis:
+    driver: local

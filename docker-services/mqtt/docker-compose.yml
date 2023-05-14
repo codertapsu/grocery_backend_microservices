@@ -1,0 +1,48 @@
+version: '3.9'
+
+services:
+  # mosquitto:
+  #   image: eclipse-mosquitto:latest
+  #   container_name: mosquitto-mqtt
+  #   volumes:
+  #     - /opt/mosquitto:/mosquitto
+  #     - /opt/mosquitto/data:/mosquitto/data
+  #     - /opt/mosquitto/log:/mosquitto/log
+  #   ports:
+  #     - 1883:1883
+  #     - 9001:9001
+  mosquitto:
+    # container_name: mosquitto-mqtt
+    image: eclipse-mosquitto:latest
+    volumes:
+      - ./config:/mosquitto/config/
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    ports:
+      - '1883:1883'
+      - '8883:8883'
+    environment:
+      TZ: 'Europe/Berlin'
+    networks:
+      - mqtt
+    restart: always
+
+  mqtt-explorer:
+    image: smeagolworms4/mqtt-explorer:latest
+    networks:
+      - mqtt
+    depends_on:
+      - mosquitto
+    ports:
+      - 4000:4000
+    environment:
+      HTTP_PORT: 4000
+      CONFIG_PATH: /mqtt-explorer/config
+
+networks:
+  mqtt:
+
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:

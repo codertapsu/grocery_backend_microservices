@@ -1,0 +1,123 @@
+import { OnQueueActive, OnQueueCompleted, OnQueueFailed, Process, Processor } from '@nestjs/bull';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+
+import { Job } from 'bull';
+import { readFile } from 'fs/promises';
+import { compile } from 'handlebars';
+import { createTransport } from 'nodemailer';
+import Mail from 'nodemailer/lib/mailer';
+import SMTPTransport from 'nodemailer/lib/smtp-transport';
+import { join } from 'path';
+
+import { EMAIL_CONFIG, EmailQueue, ProcessName } from '../constants';
+import { ActivationPayload, EmailConfig } from '../models';
+
+@Injectable()
+@Processor({
+  name: EmailQueue.Activation.valueOf(),
+})
+export class ActivationProcessor implements OnModuleInit {
+  private readonly _logger = new Logger(ActivationProcessor.name);
+  private readonly _mailerService: Mail;
+
+  public constructor(@Inject(EMAIL_CONFIG) private _mailConfig: EmailConfig) {
+    const smtpTransport = {
+      host: _mailConfig.host,
+      port: _mailConfig.port,
+      secure: true,
+      auth: {
+        user: _mailConfig.address,
+        pass: _mailConfig.password,
+      },
+      tls: { rejectUnauthorized: false },
+    };
+    this._mailerService = createTransport(smtpTransport);
+  }
+
+  public onModuleInit(): void {
+    this._logger.log(`The module has been initialized.`);
+  }
+
+  @OnQueueActive()
+  public onActive(job: Job): void {
+    this._logger.debug(`Processing job ${job.id} of type ${job.name}`);
+  }
+
+  @OnQueueCompleted()
+  public onComplete(job: Job): void {
+    this._logger.debug(`Completed job ${job.id} of type ${job.name}`);
+  }
+
+  @OnQueueFailed()
+  public onError(job: Job<any>, error: any): void {
+    this._logger.error(`Failed job ${job.id} of type ${job.name}: ${error.message}`, error.stack);
+  }
+
+  @Process(ProcessName.Confirmation.valueOf())
+  public async confirmRegistration(
+    job: Job<{ emailAddress: string; confirmUrl: string }>,
+  ): Promise<void> {
+    try {
+      const filePath = join(__dirname, '../templates/registration.html');
+      const source = await readFile(filePath, 'utf-8');
+      const template = compile(source);
+      const replacements = {
+        confirmUrl: job.data.confirmUrl,
+      };
+      const emailTemplate = template(replacements);
+      await this._mailerService.sendMail({
+        to: job.data.emailAddress,
+        from: {
+          name: 'Grocery',
+          address: this._mailConfig.address,
+        },
+        subject: 'Confirm your registration',
+        text: `Please confirm your registration by clicking on the link below:`,
+        html: emailTemplate,
+        // attachments: [
+        //   {
+        //     filename: 'confirm-registration.html',
+        //     content: `<a href="${job.data.confirmUrl}">Confirm your registration</a>`,
+        //     contentType: 'text/html',
+        //   },
+        // ],
+        // attachments: [{ filename: "pic-1.jpeg", path: "./attachments/pic-1.jpeg" }],
+      });
+    } catch {
+      this._logger.error(`Failed to send confirmation email to '${job.data.emailAddress}'`);
+    }
+  }
+
+  @Process(ProcessName.Activation.valueOf())
+  public async activeRegistration(job: Job<ActivationPayload>): Promise<void> {
+    try {
+      const filePath = join(__dirname, '../templates/registration.html');
+      const source = await readFile(filePath, 'utf-8');
+      const template = compile(source);
+      const replacements = {
+        confirmUrl: job.data.url,
+      };
+      const emailTemplate = template(replacements);
+      await this._mailerService.sendMail({
+        to: job.data.email,
+        from: {
+          name: 'Grocery',
+          address: this._mailConfig.address,
+        },
+        subject: 'Confirm your registration',
+        text: `Please confirm your registration by clicking on the link below:`,
+        html: emailTemplate,
+        // attachments: [
+        //   {
+        //     filename: 'confirm-registration.html',
+        //     content: `<a href="${job.data.confirmUrl}">Confirm your registration</a>`,
+        //     contentType: 'text/html',
+        //   },
+        // ],
+        // attachments: [{ filename: "pic-1.jpeg", path: "./attachments/pic-1.jpeg" }],
+      });
+    } catch {
+      this._logger.error(`Failed to send confirmation email to '${job.data.email}'`);
+    }
+  }
+}
